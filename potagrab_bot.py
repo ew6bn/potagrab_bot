@@ -18,7 +18,7 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 # ================================
 
 # ========== SETTINGS ==========
-BOT_TOKEN = "8737137431:AAELIfpIaa1dcKaiIKAHJBY_-jkrq8ItR1U"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 # ===============================
 
 API_URL = "https://api.pota.app/spot"
