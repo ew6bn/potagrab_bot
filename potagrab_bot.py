@@ -325,7 +325,7 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 # ========== SPOT FUNCTIONS ==========
-async def send_spots_to_user(user_id, spots, title):
+async def send_spots_to_user(user_id, spots, title_prefix):
     if not spots:
         return
     
@@ -337,18 +337,22 @@ async def send_spots_to_user(user_id, spots, title):
             unique_spots[activator] = spot
     
     unique_spots_list = list(unique_spots.values())
+    total_count = len(spots)
+    unique_count = len(unique_spots_list)
+    
+    # Формируем заголовок с информацией об уникальных спотах
+    if total_count != unique_count:
+        title = f"{title_prefix} ({unique_count} unique of {total_count})"
+    else:
+        title = f"{title_prefix} ({unique_count})"
     
     full = "\n\n".join(format_spot_line(s) for s in unique_spots_list)
     prefix = f"{title}\nBands: {get_bands_display(user_id)} | Modes: {get_modes_display(user_id)} | Blocked: {get_blocked_display(user_id)}\n{'-'*40}\n\n"
     full = prefix + full
     
-    # Добавляем информацию о дедупликации
-    if len(spots) != len(unique_spots_list):
-        full = f"{full}\n\n_({len(unique_spots_list)} unique activators out of {len(spots)} total spots)_"
-    
     try:
         if len(full) > 4096:
-            await bot.send_message(user_id, f"{title[:20]}... ({len(unique_spots_list)} unique activators)")
+            await bot.send_message(user_id, f"{title}")
             for i in range(0, len(full), 4096):
                 await bot.send_message(user_id, full[i:i+4096])
         else:
@@ -381,7 +385,7 @@ async def fetch_all_for_user(user_id):
                     filtered = [s for s in spots if check_band_filter(s.get('frequency', '0'), user_id) and check_reference_filter(s.get('reference', ''), user_id) and check_mode_filter(s.get('mode', ''), user_id)]
                     if spots:
                         save_last_spot_id(user_id, max(s.get('spotId', 0) for s in spots))
-                    await send_spots_to_user(user_id, filtered, f"📡 ALL SPOTS ({len(filtered)}/{len(spots)})")
+                    await send_spots_to_user(user_id, filtered, f"📡 ALL SPOTS")
                 else:
                     try:
                         await bot.send_message(user_id, f"❌ API error: {resp.status}")
@@ -401,7 +405,7 @@ async def fetch_and_send_all():
                         if cfg.get("active", True):
                             new = await check_new_for_user(uid, all_spots)
                             if new:
-                                await send_spots_to_user(uid, new, f"🆕 NEW ({len(new)})")
+                                await send_spots_to_user(uid, new, f"🆕 NEW")
                                 logging.info(f"Sent {len(new)} new spots to {uid} (after dedup: {len(set(s.get('activator') for s in new))} unique)")
     except Exception as e:
         logging.error(f"Fetch error: {e}")
