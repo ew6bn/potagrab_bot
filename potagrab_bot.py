@@ -89,7 +89,6 @@ def get_user_config(user_id):
     return users_config[user_id_str]
 
 def restore_user(user_id):
-    """Восстанавливает пользователя (если был удалён из-за блокировки)"""
     user_id_str = str(user_id)
     if user_id_str in users_config:
         users_config[user_id_str]["active"] = True
@@ -106,7 +105,6 @@ def restore_user(user_id):
     save_users_config()
 
 def remove_user(user_id):
-    """Удаляет пользователя из конфига (если заблокировал бота)"""
     user_id_str = str(user_id)
     if user_id_str in users_config:
         del users_config[user_id_str]
@@ -330,12 +328,27 @@ dp = Dispatcher()
 async def send_spots_to_user(user_id, spots, title):
     if not spots:
         return
-    full = "\n\n".join(format_spot_line(s) for s in spots)
+    
+    # Дедупликация по позывному (активатору)
+    unique_spots = {}
+    for spot in spots:
+        activator = spot.get('activator', '')
+        if activator not in unique_spots:
+            unique_spots[activator] = spot
+    
+    unique_spots_list = list(unique_spots.values())
+    
+    full = "\n\n".join(format_spot_line(s) for s in unique_spots_list)
     prefix = f"{title}\nBands: {get_bands_display(user_id)} | Modes: {get_modes_display(user_id)} | Blocked: {get_blocked_display(user_id)}\n{'-'*40}\n\n"
     full = prefix + full
+    
+    # Добавляем информацию о дедупликации
+    if len(spots) != len(unique_spots_list):
+        full = f"{full}\n\n_({len(unique_spots_list)} unique activators out of {len(spots)} total spots)_"
+    
     try:
         if len(full) > 4096:
-            await bot.send_message(user_id, f"{title[:20]}... ({len(spots)} spots)")
+            await bot.send_message(user_id, f"{title[:20]}... ({len(unique_spots_list)} unique activators)")
             for i in range(0, len(full), 4096):
                 await bot.send_message(user_id, full[i:i+4096])
         else:
@@ -389,7 +402,7 @@ async def fetch_and_send_all():
                             new = await check_new_for_user(uid, all_spots)
                             if new:
                                 await send_spots_to_user(uid, new, f"🆕 NEW ({len(new)})")
-                                logging.info(f"Sent {len(new)} new to {uid}")
+                                logging.info(f"Sent {len(new)} new spots to {uid} (after dedup: {len(set(s.get('activator') for s in new))} unique)")
     except Exception as e:
         logging.error(f"Fetch error: {e}")
 
@@ -412,7 +425,8 @@ async def cmd_start(m: types.Message):
         f"🎚️ Bands: {get_bands_display(uid)}\n"
         f"📡 Modes: {get_modes_display(uid)}\n"
         f"🚫 Blocked: {get_blocked_display(uid)}\n\n"
-        f"Use buttons below:",
+        f"Use buttons below:\n\n"
+        f"ℹ️ Note: If the same callsign appears multiple times, it will be shown only once.",
         reply_markup=get_main_keyboard(uid))
 
 @dp.message(Command("stop"))
@@ -449,7 +463,8 @@ async def cmd_help(m: types.Message):
         f"• Bands: {get_bands_display(uid)}\n"
         f"• Modes: {get_modes_display(uid)}\n"
         f"• Blocked: {get_blocked_display(uid)}\n"
-        f"• Status: {'ACTIVE' if is_user_active(uid) else 'PAUSED'}",
+        f"• Status: {'ACTIVE' if is_user_active(uid) else 'PAUSED'}\n\n"
+        f"ℹ️ The bot shows each callsign only once per update.",
         reply_markup=get_main_keyboard(uid))
 
 @dp.message(Command("interval"))
@@ -496,7 +511,8 @@ async def cmd_status(m: types.Message):
         f"• Interval: {format_interval(current_interval)}\n"
         f"• Bands: {get_bands_display(uid)}\n"
         f"• Modes: {get_modes_display(uid)}\n"
-        f"• Blocked: {get_blocked_display(uid)}")
+        f"• Blocked: {get_blocked_display(uid)}\n\n"
+        f"ℹ️ The bot shows each callsign only once per update.")
 
 # ========== CALLBACKS ==========
 @dp.callback_query()
