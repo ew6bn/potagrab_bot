@@ -216,6 +216,16 @@ def check_reference_filter(ref, user_id):
             return False
     return True
 
+# ========== SORTING FUNCTION ==========
+def sort_spots_by_frequency(spots):
+    """Сортирует споты по частоте по возрастанию"""
+    def get_frequency(spot):
+        try:
+            return float(spot.get('frequency', 0))
+        except (ValueError, TypeError):
+            return 0
+    return sorted(spots, key=get_frequency)
+
 # ========== FORMATTING FUNCTIONS ==========
 def make_bold(text):
     bold = {'A':'𝗔','B':'𝗕','C':'𝗖','D':'𝗗','E':'𝗘','F':'𝗙','G':'𝗚','H':'𝗛','I':'𝗜','J':'𝗝','K':'𝗞','L':'𝗟','M':'𝗠','N':'𝗡','O':'𝗢','P':'𝗣','Q':'𝗤','R':'𝗥','S':'𝗦','T':'𝗧','U':'𝗨','V':'𝗩','W':'𝗪','X':'𝗫','Y':'𝗬','Z':'𝗭',
@@ -329,9 +339,12 @@ async def send_spots_to_user(user_id, spots, title_prefix):
     if not spots:
         return
     
+    # Сортируем споты по частоте (по возрастанию)
+    sorted_spots = sort_spots_by_frequency(spots)
+    
     # Дедупликация по позывному (активатору)
     unique_spots = {}
-    for spot in spots:
+    for spot in sorted_spots:
         activator = spot.get('activator', '')
         if activator not in unique_spots:
             unique_spots[activator] = spot
@@ -342,12 +355,12 @@ async def send_spots_to_user(user_id, spots, title_prefix):
     
     # Формируем заголовок с информацией об уникальных спотах
     if total_count != unique_count:
-        title = f"{title_prefix} ({unique_count} unique of {total_count})"
+        title = f"{title_prefix} ({unique_count} unique of {total_count}) 🔼"
     else:
-        title = f"{title_prefix} ({unique_count})"
+        title = f"{title_prefix} ({unique_count}) 🔼"
     
     full = "\n\n".join(format_spot_line(s) for s in unique_spots_list)
-    prefix = f"{title}\nBands: {get_bands_display(user_id)} | Modes: {get_modes_display(user_id)} | Blocked: {get_blocked_display(user_id)}\n{'-'*40}\n\n"
+    prefix = f"{title}\nBands: {get_bands_display(user_id)} | Modes: {get_modes_display(user_id)} | Blocked: {get_blocked_display(user_id)} | Sorted by frequency ↑\n{'-'*40}\n\n"
     full = prefix + full
     
     try:
@@ -430,7 +443,9 @@ async def cmd_start(m: types.Message):
         f"📡 Modes: {get_modes_display(uid)}\n"
         f"🚫 Blocked: {get_blocked_display(uid)}\n\n"
         f"Use buttons below:\n\n"
-        f"ℹ️ Note: If the same callsign appears multiple times, it will be shown only once.",
+        f"ℹ️ Features:\n"
+        f"• Each callsign shown once per update\n"
+        f"• Sorted by frequency (ascending) 📶",
         reply_markup=get_main_keyboard(uid))
 
 @dp.message(Command("stop"))
@@ -468,7 +483,9 @@ async def cmd_help(m: types.Message):
         f"• Modes: {get_modes_display(uid)}\n"
         f"• Blocked: {get_blocked_display(uid)}\n"
         f"• Status: {'ACTIVE' if is_user_active(uid) else 'PAUSED'}\n\n"
-        f"ℹ️ The bot shows each callsign only once per update.",
+        f"ℹ️ Features:\n"
+        f"• Each callsign shown once per update\n"
+        f"• Sorted by frequency (ascending) 📶",
         reply_markup=get_main_keyboard(uid))
 
 @dp.message(Command("interval"))
@@ -516,7 +533,9 @@ async def cmd_status(m: types.Message):
         f"• Bands: {get_bands_display(uid)}\n"
         f"• Modes: {get_modes_display(uid)}\n"
         f"• Blocked: {get_blocked_display(uid)}\n\n"
-        f"ℹ️ The bot shows each callsign only once per update.")
+        f"ℹ️ Features:\n"
+        f"• Each callsign shown once per update\n"
+        f"• Sorted by frequency (ascending) 📶")
 
 # ========== CALLBACKS ==========
 @dp.callback_query()
