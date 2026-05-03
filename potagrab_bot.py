@@ -18,7 +18,6 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 # ================================
 
 # ========== SETTINGS ==========
-# Берём токен из переменной окружения BOT_TOKEN
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     logging.error("BOT_TOKEN environment variable not set!")
@@ -53,6 +52,13 @@ BANDS = {
     "vhf": {"name": "VHF (6m+)", "min_freq": 50000, "max_freq": 999999, "emoji": "📡"},
 }
 
+# Sort types
+SORT_TYPES = {
+    "none": {"name": "No sorting", "emoji": ""},
+    "asc": {"name": "Ascending", "emoji": "🔼"},
+    "desc": {"name": "Descending", "emoji": "🔽"}
+}
+
 # ========== CONFIG FUNCTIONS ==========
 def load_users_config():
     global users_config
@@ -84,7 +90,8 @@ def get_user_config(user_id):
             "selected_modes": ["all"],
             "blocked_reference_prefixes": [],
             "last_spot_id": 0,
-            "active": True
+            "active": True,
+            "sort_type": "none"
         }
     return users_config[user_id_str]
 
@@ -99,7 +106,8 @@ def restore_user(user_id):
             "selected_modes": ["all"],
             "blocked_reference_prefixes": [],
             "last_spot_id": 0,
-            "active": True
+            "active": True,
+            "sort_type": "none"
         }
         logging.info(f"Created new config for user {user_id}")
     save_users_config()
@@ -146,6 +154,17 @@ def get_blocked_prefixes(user_id):
 def save_blocked_prefixes(user_id, prefixes):
     get_user_config(user_id)["blocked_reference_prefixes"] = prefixes
     save_users_config()
+
+def get_sort_type(user_id):
+    return get_user_config(user_id).get("sort_type", "none")
+
+def save_sort_type(user_id, sort_type):
+    get_user_config(user_id)["sort_type"] = sort_type
+    save_users_config()
+
+def get_sort_emoji(user_id):
+    sort_type = get_sort_type(user_id)
+    return SORT_TYPES.get(sort_type, {}).get("emoji", "")
 
 # ========== DISPLAY FUNCTIONS ==========
 def get_bands_display(user_id):
@@ -217,14 +236,25 @@ def check_reference_filter(ref, user_id):
     return True
 
 # ========== SORTING FUNCTION ==========
-def sort_spots_by_frequency(spots):
-    """Сортирует споты по частоте по возрастанию"""
+def sort_spots_by_frequency(spots, user_id):
+    """Сортирует споты по частоте согласно настройкам пользователя"""
+    sort_type = get_sort_type(user_id)
+    
+    if sort_type == "none":
+        return spots
+    
     def get_frequency(spot):
         try:
             return float(spot.get('frequency', 0))
         except (ValueError, TypeError):
             return 0
-    return sorted(spots, key=get_frequency)
+    
+    if sort_type == "asc":
+        return sorted(spots, key=get_frequency)
+    elif sort_type == "desc":
+        return sorted(spots, key=get_frequency, reverse=True)
+    
+    return spots
 
 # ========== FORMATTING FUNCTIONS ==========
 def make_bold(text):
@@ -265,8 +295,9 @@ def get_main_keyboard(user_id):
         [KeyboardButton(text="🔄 Now")],
         [KeyboardButton(text="⏱️ Set Interval"), KeyboardButton(text="🎚️ Set Band")],
         [KeyboardButton(text="📡 Set Mode"), KeyboardButton(text="🚫 Block Reference")],
-        [KeyboardButton(text="🛑 STOP" if active else "▶️ START"), KeyboardButton(text="📊 Status")],
-        [KeyboardButton(text="🔄 Reset History"), KeyboardButton(text="❓ Help")]
+        [KeyboardButton(text="📊 Set Sort"), KeyboardButton(text="🛑 STOP" if active else "▶️ START")],
+        [KeyboardButton(text="📊 Status"), KeyboardButton(text="🔄 Reset History")],
+        [KeyboardButton(text="❓ Help")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True, one_time_keyboard=False)
 
@@ -277,6 +308,21 @@ def get_interval_keyboard():
          InlineKeyboardButton(text="5 min", callback_data="int_300")],
         [InlineKeyboardButton(text="📝 Custom", callback_data="int_custom")],
         [InlineKeyboardButton(text="❌ Cancel", callback_data="int_cancel")]
+    ])
+
+def get_sort_keyboard(user_id):
+    current_sort = get_sort_type(user_id)
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=f"{'✅ ' if current_sort == 'none' else ''}📋 No sorting", 
+            callback_data="sort_none")],
+        [InlineKeyboardButton(
+            text=f"{'✅ ' if current_sort == 'asc' else ''}🔼 Ascending (low to high)", 
+            callback_data="sort_asc")],
+        [InlineKeyboardButton(
+            text=f"{'✅ ' if current_sort == 'desc' else ''}🔽 Descending (high to low)", 
+            callback_data="sort_desc")],
+        [InlineKeyboardButton(text="❌ Cancel", callback_data="sort_cancel")]
     ])
 
 def get_bands_keyboard(user_id):
@@ -339,10 +385,10 @@ async def send_spots_to_user(user_id, spots, title_prefix):
     if not spots:
         return
     
-    # Сортируем споты по частоте (по возрастанию)
-    sorted_spots = sort_spots_by_frequency(spots)
+    # Сортируем споты согласно настройкам пользователя
+    sorted_spots = sort_spots_by_frequency(spots, user_id)
     
-    # Дедупликация по позывному (активатору)
+    # Дедупликация по позывному
     unique_spots = {}
     for spot in sorted_spots:
         activator = spot.get('activator', '')
@@ -352,15 +398,16 @@ async def send_spots_to_user(user_id, spots, title_prefix):
     unique_spots_list = list(unique_spots.values())
     total_count = len(spots)
     unique_count = len(unique_spots_list)
+    sort_emoji = get_sort_emoji(user_id)
     
-    # Формируем заголовок с информацией об уникальных спотах
+    # Формируем заголовок
     if total_count != unique_count:
-        title = f"{title_prefix} ({unique_count} unique of {total_count}) 🔼"
+        title = f"{title_prefix} ({unique_count} unique of {total_count}) {sort_emoji}"
     else:
-        title = f"{title_prefix} ({unique_count}) 🔼"
+        title = f"{title_prefix} ({unique_count}) {sort_emoji}"
     
     full = "\n\n".join(format_spot_line(s) for s in unique_spots_list)
-    prefix = f"{title}\nBands: {get_bands_display(user_id)} | Modes: {get_modes_display(user_id)} | Blocked: {get_blocked_display(user_id)} | Sorted by frequency ↑\n{'-'*40}\n\n"
+    prefix = f"{title}\nBands: {get_bands_display(user_id)} | Modes: {get_modes_display(user_id)} | Blocked: {get_blocked_display(user_id)}\n{'-'*40}\n\n"
     full = prefix + full
     
     try:
@@ -419,7 +466,7 @@ async def fetch_and_send_all():
                             new = await check_new_for_user(uid, all_spots)
                             if new:
                                 await send_spots_to_user(uid, new, f"🆕 NEW")
-                                logging.info(f"Sent {len(new)} new spots to {uid} (after dedup: {len(set(s.get('activator') for s in new))} unique)")
+                                logging.info(f"Sent {len(new)} new spots to {uid}")
     except Exception as e:
         logging.error(f"Fetch error: {e}")
 
@@ -442,10 +489,7 @@ async def cmd_start(m: types.Message):
         f"🎚️ Bands: {get_bands_display(uid)}\n"
         f"📡 Modes: {get_modes_display(uid)}\n"
         f"🚫 Blocked: {get_blocked_display(uid)}\n\n"
-        f"Use buttons below:\n\n"
-        f"ℹ️ Features:\n"
-        f"• Each callsign shown once per update\n"
-        f"• Sorted by frequency (ascending) 📶",
+        f"Use buttons below:",
         reply_markup=get_main_keyboard(uid))
 
 @dp.message(Command("stop"))
@@ -471,6 +515,7 @@ async def cmd_help(m: types.Message):
         f"/band - select bands\n"
         f"/mode - select modes (CW/SSB/DIGI)\n"
         f"/block - block prefixes (US-)\n"
+        f"/sort - change frequency sorting\n"
         f"/stop - pause updates\n"
         f"/start_auto - resume updates\n"
         f"/reset - reset history\n"
@@ -482,10 +527,7 @@ async def cmd_help(m: types.Message):
         f"• Bands: {get_bands_display(uid)}\n"
         f"• Modes: {get_modes_display(uid)}\n"
         f"• Blocked: {get_blocked_display(uid)}\n"
-        f"• Status: {'ACTIVE' if is_user_active(uid) else 'PAUSED'}\n\n"
-        f"ℹ️ Features:\n"
-        f"• Each callsign shown once per update\n"
-        f"• Sorted by frequency (ascending) 📶",
+        f"• Status: {'ACTIVE' if is_user_active(uid) else 'PAUSED'}",
         reply_markup=get_main_keyboard(uid))
 
 @dp.message(Command("interval"))
@@ -500,12 +542,17 @@ async def cmd_band(m: types.Message):
 @dp.message(Command("mode"))
 async def cmd_mode(m: types.Message):
     uid = m.from_user.id
-    await m.answer(f"📡 Select modes\n\nCurrent: {get_modes_display(uid)}\n\nCW - Morse | SSB - Voice | DIGI - FT4/FT8/etc", reply_markup=get_modes_keyboard(uid))
+    await m.answer(f"📡 Select modes\n\nCurrent: {get_modes_display(uid)}", reply_markup=get_modes_keyboard(uid))
 
 @dp.message(Command("block"))
 async def cmd_block(m: types.Message):
     uid = m.from_user.id
     await m.answer(f"🚫 Block prefixes\n\nCurrent: {get_blocked_display(uid)}\n\nExamples: US-, GB-, DE-", reply_markup=get_blocked_keyboard())
+
+@dp.message(Command("sort"))
+async def cmd_sort(m: types.Message):
+    uid = m.from_user.id
+    await m.answer(f"📊 Select frequency sorting\n\nCurrent: {SORT_TYPES[get_sort_type(uid)]['name']}", reply_markup=get_sort_keyboard(uid))
 
 @dp.message(Command("now"))
 async def cmd_now(m: types.Message):
@@ -530,12 +577,10 @@ async def cmd_status(m: types.Message):
         f"• Status: {'ACTIVE' if is_user_active(uid) else 'PAUSED'}\n"
         f"• Last spotId: {get_last_spot_id(uid)}\n"
         f"• Interval: {format_interval(current_interval)}\n"
+        f"• Sorting: {SORT_TYPES[get_sort_type(uid)]['name']}\n"
         f"• Bands: {get_bands_display(uid)}\n"
         f"• Modes: {get_modes_display(uid)}\n"
-        f"• Blocked: {get_blocked_display(uid)}\n\n"
-        f"ℹ️ Features:\n"
-        f"• Each callsign shown once per update\n"
-        f"• Sorted by frequency (ascending) 📶")
+        f"• Blocked: {get_blocked_display(uid)}")
 
 # ========== CALLBACKS ==========
 @dp.callback_query()
@@ -544,6 +589,7 @@ async def handle_callbacks(cb: CallbackQuery):
     data = cb.data
     global current_interval
 
+    # Interval callbacks
     if data == "int_cancel":
         await cb.message.edit_text("❌ Cancelled")
     elif data == "int_custom":
@@ -556,7 +602,19 @@ async def handle_callbacks(cb: CallbackQuery):
             await cb.message.edit_text(f"✅ Interval changed!\nOld: {format_interval(old)}\nNew: {format_interval(new)}")
         except:
             await cb.message.edit_text("❌ Error")
-
+    
+    # Sort callbacks
+    elif data == "sort_cancel":
+        await cb.message.edit_text("❌ Sorting cancelled")
+    elif data.startswith("sort_"):
+        sort_type = data.replace("sort_", "")
+        if sort_type in ["none", "asc", "desc"]:
+            save_sort_type(uid, sort_type)
+            await cb.message.edit_text(f"✅ Sorting changed!\nNew: {SORT_TYPES[sort_type]['name']}")
+        else:
+            await cb.message.edit_text("❌ Invalid sort type")
+    
+    # Band callbacks
     elif data == "band_cancel":
         await cb.message.edit_text("❌ Cancelled")
     elif data == "band_apply":
@@ -585,7 +643,8 @@ async def handle_callbacks(cb: CallbackQuery):
                 bands.append(band)
             save_selected_bands(uid, bands)
             await cb.message.edit_text(f"🎚️ Current: {get_bands_display(uid)}", reply_markup=get_bands_keyboard(uid))
-
+    
+    # Mode callbacks
     elif data == "mode_cancel":
         await cb.message.edit_text("❌ Cancelled")
     elif data == "mode_apply":
@@ -614,7 +673,8 @@ async def handle_callbacks(cb: CallbackQuery):
                 modes.append(mode)
             save_selected_modes(uid, modes)
             await cb.message.edit_text(f"📡 Current: {get_modes_display(uid)}", reply_markup=get_modes_keyboard(uid))
-
+    
+    # Blocked callbacks
     elif data == "block_cancel":
         await cb.message.edit_text("❌ Cancelled")
     elif data == "block_add":
@@ -699,6 +759,8 @@ async def btn_band(m): await cmd_band(m)
 async def btn_mode(m): await cmd_mode(m)
 @dp.message(lambda m: m.text == "🚫 Block Reference")
 async def btn_block(m): await cmd_block(m)
+@dp.message(lambda m: m.text == "📊 Set Sort")
+async def btn_sort(m): await cmd_sort(m)
 @dp.message(lambda m: m.text == "🛑 STOP")
 async def btn_stop(m): await cmd_stop(m)
 @dp.message(lambda m: m.text == "▶️ START")
