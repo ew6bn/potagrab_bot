@@ -237,7 +237,6 @@ def check_reference_filter(ref, user_id):
 
 # ========== SORTING FUNCTION ==========
 def sort_spots_by_frequency(spots, user_id):
-    """Сортирует споты по частоте согласно настройкам пользователя"""
     sort_type = get_sort_type(user_id)
     
     if sort_type == "none":
@@ -268,6 +267,16 @@ def make_italic(text):
               'a':'𝑎','b':'𝑏','c':'𝑐','d':'𝑑','e':'𝑒','f':'𝑓','g':'𝑔','h':'ℎ','i':'𝑖','j':'𝑗','k':'𝑘','l':'𝑙','m':'𝑚','n':'𝑛','o':'𝑜','p':'𝑝','q':'𝑞','r':'𝑟','s':'𝑠','t':'𝑡','u':'𝑢','v':'𝑣','w':'𝑤','x':'𝑥','y':'𝑦','z':'𝑧'}
     return ''.join(italic.get(c, c) for c in str(text))
 
+def make_small(text):
+    """Преобразует текст в мелкий шрифт (small caps), цифры остаются обычными"""
+    small = {
+        'A': 'ᴀ', 'B': 'ʙ', 'C': 'ᴄ', 'D': 'ᴅ', 'E': 'ᴇ', 'F': 'ғ', 'G': 'ɢ', 'H': 'ʜ', 'I': 'ɪ', 'J': 'ᴊ', 'K': 'ᴋ', 'L': 'ʟ', 'M': 'ᴍ', 'N': 'ɴ', 'O': 'ᴏ', 'P': 'ᴘ', 'Q': 'ǫ', 'R': 'ʀ', 'S': 's', 'T': 'ᴛ', 'U': 'ᴜ', 'V': 'ᴠ', 'W': 'ᴡ', 'X': 'x', 'Y': 'ʏ', 'Z': 'ᴢ',
+        'a': 'ᴀ', 'b': 'ʙ', 'c': 'ᴄ', 'd': 'ᴅ', 'e': 'ᴇ', 'f': 'ғ', 'g': 'ɢ', 'h': 'ʜ', 'i': 'ɪ', 'j': 'ᴊ', 'k': 'ᴋ', 'l': 'ʟ', 'm': 'ᴍ', 'n': 'ɴ', 'o': 'ᴏ', 'p': 'ᴘ', 'q': 'ǫ', 'r': 'ʀ', 's': 's', 't': 'ᴛ', 'u': 'ᴜ', 'v': 'ᴠ', 'w': 'ᴡ', 'x': 'x', 'y': 'ʏ', 'z': 'ᴢ',
+        '0': '0', '1': '1', '2': '2', '3': '3', '4': '4', '5': '5', '6': '6', '7': '7', '8': '8', '9': '9',
+        '-': '-', '.': '.', '/': '/', ':': ':'
+    }
+    return ''.join(small.get(c, c) for c in str(text))
+
 def format_spot_line(spot):
     freq = spot.get('frequency', 'N/A')
     activator = spot.get('activator', 'N/A')
@@ -275,9 +284,22 @@ def format_spot_line(spot):
     ref = spot.get('reference', 'N/A')
     name = spot.get('name', 'N/A')
     loc = spot.get('locationDesc', 'N/A')
+    spotter = spot.get('spotter', 'N/A')
+    comments = spot.get('comments', '')
     time_raw = spot.get('spotTime', '')
     time_short = time_raw.split('T')[1][:5] if time_raw and 'T' in time_raw else "??:??"
-    return f"{time_short} {make_bold(activator)} {freq} kHz {mode} {make_bold(ref)} ({loc})\n{make_italic(name)}"
+    
+    spotter_small = make_small(spotter)
+    comments_small = make_small(comments) if comments else ""
+    
+    result = (f"{time_short} {make_bold(activator)} {freq} kHz {mode} {make_bold(ref)} ({loc})\n"
+              f"{make_italic(name)}\n"
+              f"📡 {spotter_small}")
+    
+    if comments_small:
+        result += f": {comments_small}"
+    
+    return result
 
 def format_interval(sec):
     if sec < 60:
@@ -385,10 +407,8 @@ async def send_spots_to_user(user_id, spots, title_prefix):
     if not spots:
         return
     
-    # Сортируем споты согласно настройкам пользователя
     sorted_spots = sort_spots_by_frequency(spots, user_id)
     
-    # Дедупликация по позывному
     unique_spots = {}
     for spot in sorted_spots:
         activator = spot.get('activator', '')
@@ -400,7 +420,6 @@ async def send_spots_to_user(user_id, spots, title_prefix):
     unique_count = len(unique_spots_list)
     sort_emoji = get_sort_emoji(user_id)
     
-    # Формируем заголовок
     if total_count != unique_count:
         title = f"{title_prefix} ({unique_count} unique of {total_count}) {sort_emoji}"
     else:
@@ -589,7 +608,6 @@ async def handle_callbacks(cb: CallbackQuery):
     data = cb.data
     global current_interval
 
-    # Interval callbacks
     if data == "int_cancel":
         await cb.message.edit_text("❌ Cancelled")
     elif data == "int_custom":
@@ -603,7 +621,6 @@ async def handle_callbacks(cb: CallbackQuery):
         except:
             await cb.message.edit_text("❌ Error")
     
-    # Sort callbacks
     elif data == "sort_cancel":
         await cb.message.edit_text("❌ Sorting cancelled")
     elif data.startswith("sort_"):
@@ -614,7 +631,6 @@ async def handle_callbacks(cb: CallbackQuery):
         else:
             await cb.message.edit_text("❌ Invalid sort type")
     
-    # Band callbacks
     elif data == "band_cancel":
         await cb.message.edit_text("❌ Cancelled")
     elif data == "band_apply":
@@ -644,7 +660,6 @@ async def handle_callbacks(cb: CallbackQuery):
             save_selected_bands(uid, bands)
             await cb.message.edit_text(f"🎚️ Current: {get_bands_display(uid)}", reply_markup=get_bands_keyboard(uid))
     
-    # Mode callbacks
     elif data == "mode_cancel":
         await cb.message.edit_text("❌ Cancelled")
     elif data == "mode_apply":
@@ -674,7 +689,6 @@ async def handle_callbacks(cb: CallbackQuery):
             save_selected_modes(uid, modes)
             await cb.message.edit_text(f"📡 Current: {get_modes_display(uid)}", reply_markup=get_modes_keyboard(uid))
     
-    # Blocked callbacks
     elif data == "block_cancel":
         await cb.message.edit_text("❌ Cancelled")
     elif data == "block_add":
