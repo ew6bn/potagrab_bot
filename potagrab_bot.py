@@ -294,7 +294,7 @@ def format_spot_line(spot):
     
     result = (f"{time_short} {make_bold(activator)} {freq} kHz {mode} {make_bold(ref)} ({loc})\n"
               f"{make_italic(name)}\n"
-              f"📡 {spotter_small}")
+              f"✉️ {spotter_small}")
     
     if comments_small:
         result += f": {comments_small}"
