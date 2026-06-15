@@ -37,7 +37,7 @@ users_config = {}
 # DIGI modes
 DIGI_MODES = ["FT4", "FT8", "RTTY", "PSK", "PSK31", "PSK63", "MFSK", "JT65", "JT9", "FT2", "FSK", "OLIVIA", "CONTESTI", "HELL", "THOR", "DOMINO"]
 
-# Band definitions
+# Band definitions (frequencies in kHz)
 BANDS = {
     "160m": {"name": "160m", "min_freq": 1800, "max_freq": 2000, "emoji": "🔴"},
     "80m": {"name": "80m", "min_freq": 3500, "max_freq": 4000, "emoji": "🟠"},
@@ -49,7 +49,8 @@ BANDS = {
     "15m": {"name": "15m", "min_freq": 21000, "max_freq": 21450, "emoji": "🔴"},
     "12m": {"name": "12m", "min_freq": 24890, "max_freq": 24990, "emoji": "⚫"},
     "10m": {"name": "10m", "min_freq": 28000, "max_freq": 29700, "emoji": "⚪"},
-    "vhf": {"name": "VHF (6m+)", "min_freq": 50000, "max_freq": 999999, "emoji": "📡"},
+    "6m": {"name": "6m", "min_freq": 50000, "max_freq": 54000, "emoji": "💜"},
+    "vhf": {"name": "VHF+ (4m, 2m, 70cm, 23cm)", "min_freq": 60000, "max_freq": 999999, "emoji": "📡"},
 }
 
 # Sort types
@@ -350,12 +351,13 @@ def get_sort_keyboard(user_id):
 def get_bands_keyboard(user_id):
     selected = get_selected_bands(user_id)
     keyboard = []
-    band_list = ["160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "vhf"]
+    band_list = ["160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m", "vhf"]
     for i in range(0, len(band_list), 2):
         row = []
         for band in band_list[i:i+2]:
-            check = "✅ " if band in selected else ""
-            row.append(InlineKeyboardButton(text=f"{check}{BANDS[band]['emoji']} {band}", callback_data=f"band_{band}"))
+            if band in BANDS:
+                check = "✅ " if band in selected else ""
+                row.append(InlineKeyboardButton(text=f"{check}{BANDS[band]['emoji']} {BANDS[band]['name']}", callback_data=f"band_{band}"))
         keyboard.append(row)
     keyboard.append([InlineKeyboardButton(text="🌍 All Bands" if "all" in selected else "📻 All Bands", callback_data="band_all"),
                      InlineKeyboardButton(text="❌ Clear", callback_data="band_clear")])
